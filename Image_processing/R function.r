@@ -173,3 +173,75 @@ gray_loading = function(dir) {
   }
   return(load_1st_rate)
 } 
+## 7. Pairing loading rate
+Triple_rate_segONlarge = function(dir, SD_thresh = 20){
+  figures <- list.files(dir)[grep("*.czi", list.files(dir))]
+  gsub(x = figures, pattern = ".czi", replacement = "") 
+  # 28 wells; 30; 35; 31; 28; 29; 31
+  dataresult <- data.frame(row.names = gsub(x = figures, pattern = ".czi", replacement = ""),
+                           Sample_ID = gsub(x = figures, pattern = ".czi", replacement = ""),
+                           Assay = remove_pattern_after_hyphen(figures),
+                           All_rate = NA,
+                           first_sencond_rate = NA,
+                           first_third_rate =NA,
+                           first_rate = NA,
+                           sencond_rate = NA,
+                           third_rate = NA)
+  zis <- reticulate::import("czifile")
+  input_file <- paste0(dir, figures)
+  i=1
+  for (i in 1:length(input_file)) {
+    sample_a = input_file[i]
+    image_loaded <- zis$imread(sample_a)
+    image_data_488 <- as.matrix(image_loaded[2,1:2048,1:2048,1])
+    image_data_594 <- as.matrix(image_loaded[3,1:2048,1:2048,1])
+    image_data_647 <- as.matrix(image_loaded[4,1:2048,1:2048,1])
+    
+    image_loaded_normalized_488 <- t(image_data_488/(2^16-1))
+    image_loaded_normalized_594 <- t(image_data_594/(2^16-1))
+    image_loaded_normalized_647 <- t(image_data_647/(2^16-1))
+    
+    threshold = otsu(image_loaded_normalized_488)
+    #display(image_loaded_normalized_488, all=TRUE,method = "raster")
+    #display(image_loaded_normalized_594, all=TRUE,method = "raster")
+    #display(image_loaded_normalized_647, all=TRUE,method = "raster")
+    
+    nmask = combine( mapply(function(frame, th) frame > th, getFrames(image_loaded_normalized_488), threshold, SIMPLIFY=FALSE) )
+    nmask = opening(distmap(nmask), makeBrush(1, shape='disc'))
+    nmask = fillHull(nmask)
+    nmask = bwlabel(nmask)
+    #display(nmask, all=TRUE,method = "raster")
+    size.droplets <- computeFeatures.shape(nmask)
+    pass_filter = rownames(size.droplets)[size.droplets[,"s.radius.mean"] < 80 |  size.droplets[,"s.radius.sd"] > SD_thresh ]
+    sG = rmObjects(nmask,index =  pass_filter)
+    #display(sG, all=TRUE,method = "raster")
+    
+    threshold_488 = otsu(image_loaded_normalized_488,levels = 65536)
+    threshold_594 = otsu(image_loaded_normalized_594,levels = 65536) * 0.666
+    #display(thresh(image_loaded_normalized_594, 256, 256, 0.1025925), method = "raster")
+    threshold_647 = otsu(image_loaded_normalized_647,levels = 65536) / 3
+    
+    intensity_488 <- computeFeatures.basic(sG, image_loaded_normalized_488)
+    intensity_594 <- computeFeatures.basic(sG, image_loaded_normalized_594)
+    intensity_647 <- computeFeatures.basic(sG, image_loaded_normalized_647)
+    
+    detected_488 = intensity_488[,1] > threshold_488
+    detected_594 = intensity_594[,1] > threshold_594
+    detected_647 = intensity_647[,1] > threshold_647
+    
+    #Large_number = dim(intensity_594)[1]
+    All_rate = sum((detected_488 + detected_594 + detected_647) == 3)
+    first_sencond_rate = sum((detected_488 + detected_594) == 2)
+    first_third_rate = sum((detected_488 + detected_647) == 2)
+    first_rate = sum((detected_488  == 1))
+    sencond_rate = sum((detected_594  == 1))
+    third_rate = sum((detected_647  == 1))
+    
+    dataresult[i,][c(3:8)] = c(All_rate, first_sencond_rate, first_third_rate,first_rate,sencond_rate,third_rate)
+    
+    svMisc::progress(i, length(input_file))
+    Sys.sleep(0.001)
+    if (i == length(input_file)) message("Done!")
+  }
+  return(dataresult)
+}
