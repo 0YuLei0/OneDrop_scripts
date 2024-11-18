@@ -33,6 +33,21 @@ adaptiveThreshold_custome = function(matrix_image, block_size = c(64, 64), orign
   adaptive_imag = megerdata(imag_blocks_thresh_list, along = along_num, orignal_x_dimension = orignal_x_dimension)
   return(adaptive_imag)
 }
+remove_pattern_after_hyphen = function(input_string) {
+  output_strings = input_string
+  a = 1
+  for(i in input_string){
+    hyphen_index <- regexpr("-", i)
+    if (hyphen_index != -1) {
+      result <- substr(i, 1, hyphen_index - 1)
+    } else {
+      result <- i
+    }
+    output_strings[a] = result
+    a = a + 1
+  }
+  return(output_strings)
+}                                   
 ## beads capture rate
 beads_rate <- function(dir, SD = 3, test_range = 1, threshold = 0.9) {
   # List .czi files in the specified directory
